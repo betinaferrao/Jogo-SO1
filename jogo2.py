@@ -26,7 +26,8 @@ naves = []
 foguetes = []
 threads_naves = []
 threads_foguetes = []
-threads_outros = []
+threads_gerar_naves = []
+threads_recarregar = []
 mutex_naves = threading.Lock()
 mutex_foguetes = threading.Lock()
 mutex_recarga = threading.Lock()
@@ -166,7 +167,7 @@ def gerar_naves():
 
 # Função principal do jogo
 def main():
-    global recarregando, foguetes_disponiveis, jogador_pos, naves_abatidas, naves_atingiram_solo, estado_jogo, dificuldade, config, running
+    global recarregando, foguetes_disponiveis, jogador_pos, naves_abatidas, naves_atingiram_solo, estado_jogo, dificuldade, config, running, threads_gerar_naves, threads_recarregar
 
     while running:
         for event in pygame.event.get():
@@ -182,7 +183,7 @@ def main():
                         # Iniciar thread de gerar naves ao começar o jogo
                         t = threading.Thread(target=gerar_naves, daemon=True)
                         t.start()
-                        threads_outros.append(t)
+                        threads_gerar_naves.append(t)
                     elif event.key == pygame.K_2:
                         dificuldade = "médio"
                         config = dificuldades[dificuldade]
@@ -191,7 +192,7 @@ def main():
                         # Iniciar thread de gerar naves ao começar o jogo
                         t = threading.Thread(target=gerar_naves, daemon=True)
                         t.start()
-                        threads_outros.append(t)
+                        threads_gerar_naves.append(t)
                     elif event.key == pygame.K_3:
                         dificuldade = "difícil"
                         config = dificuldades[dificuldade]
@@ -200,7 +201,7 @@ def main():
                         # Iniciar thread de gerar naves ao começar o jogo
                         t = threading.Thread(target=gerar_naves, daemon=True)
                         t.start()
-                        threads_outros.append(t)
+                        threads_gerar_naves.append(t)
                 elif estado_jogo == "jogando":
                     if event.key == pygame.K_SPACE and foguetes_disponiveis > 0:
                         foguete = Foguete(jogador_pos)
@@ -214,7 +215,7 @@ def main():
                         recarregando = True
                         t = threading.Thread(target=recarregar, daemon=True)
                         t.start()
-                        threads_outros.append(t)
+                        threads_recarregar.append(t)
                     elif event.key == pygame.K_a:
                         jogador_pos = 180  # Lado esquerdo
                     elif event.key == pygame.K_q:
@@ -236,13 +237,15 @@ def main():
         t.join()
     for t in threads_foguetes:
         t.join()
-    for t in threads_outros:
+    for t in threads_gerar_naves:
+        t.join()
+    for t in threads_recarregar:
         t.join()
 
     pygame.quit()
 
 def verificar_estado_jogo():
-    global naves_abatidas, naves_atingiram_solo, naves, foguetes, estado_jogo
+    global naves_abatidas, naves_atingiram_solo, naves, foguetes, estado_jogo, threads_gerar_naves, threads_recarregar
     total_naves = config["quantidade_naves"]
     if estado_jogo == "jogando":
         if naves_abatidas >= total_naves / 2:
@@ -258,6 +261,12 @@ def verificar_estado_jogo():
                 for foguete in foguetes:
                     foguete.ativo = False
                 foguetes.clear()
+            for t in threads_gerar_naves:
+                t.join()
+            for t in threads_recarregar:
+                t.join()
+
+
 
 if __name__ == "__main__":
     main()

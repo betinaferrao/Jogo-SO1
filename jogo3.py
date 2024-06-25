@@ -148,7 +148,7 @@ class Bateria(pygame.sprite.Sprite):
 
     def recarregar_foguetes(self):
         with self.lock:
-            time.sleep(3)  
+            # time.sleep(3)  
             self.foguetes = dificuldades[dificuldade]['foguetes']
 
 # Thread Principal do Jogo
