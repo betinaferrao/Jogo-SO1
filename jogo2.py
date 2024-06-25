@@ -37,8 +37,6 @@ jogador_pos = 90  # Ângulo inicial do lançador
 naves_abatidas = 0
 naves_atingiram_solo = 0
 estado_jogo = "menu"  # Pode ser "menu", "jogando", "vitoria" ou "derrota"
-dificuldade = None
-config = None
 running = True
 
 # Carregar imagens
@@ -59,7 +57,7 @@ class Nave(threading.Thread):
         threading.Thread.__init__(self)
         self.x = random.randint(0, 800 - nave_largura)
         self.y = 0
-        self.velocidade = config["velocidade_nave"]
+        self.velocidade = dificuldades[dificuldade]["velocidade_nave"]
         self.ativa = True
 
     def run(self):
@@ -114,7 +112,7 @@ class Foguete(threading.Thread):
 def recarregar():
     global foguetes_disponiveis, recarregando
     with mutex_recarga:
-        foguetes_disponiveis = config["k"]
+        foguetes_disponiveis = dificuldades[dificuldade]["k"]
         recarregando = False
 
 # Função para desenhar objetos na tela
@@ -157,17 +155,17 @@ def desenhar_menu():
 def gerar_naves():
     global running
     while estado_jogo == "jogando" and running:
-        if len(naves) < config["quantidade_naves"]:
+        if len(naves) < dificuldades[dificuldade]["quantidade_naves"]:
             nave = Nave()
             nave.start()
             with mutex_naves:
                 naves.append(nave)
             threads_naves.append(nave)  # Adiciona a thread à lista de threads de naves
-        time.sleep(random.uniform(*config["intervalo_naves"]))  # Tempo aleatório para criar novas naves
+        time.sleep(random.uniform(*dificuldades[dificuldade]["intervalo_naves"]))  # Tempo aleatório para criar novas naves
 
 # Função principal do jogo
 def main():
-    global recarregando, foguetes_disponiveis, jogador_pos, naves_abatidas, naves_atingiram_solo, estado_jogo, dificuldade, config, running, threads_gerar_naves, threads_recarregar
+    global recarregando, foguetes_disponiveis, jogador_pos, naves_abatidas, naves_atingiram_solo, estado_jogo, dificuldade, running, threads_gerar_naves, threads_recarregar
 
     while running:
         for event in pygame.event.get():
@@ -177,8 +175,7 @@ def main():
                 if estado_jogo == "menu":
                     if event.key == pygame.K_1:
                         dificuldade = "fácil"
-                        config = dificuldades[dificuldade]
-                        foguetes_disponiveis = config["k"]
+                        foguetes_disponiveis = dificuldades[dificuldade]["k"]
                         estado_jogo = "jogando"
                         # Iniciar thread de gerar naves ao começar o jogo
                         t = threading.Thread(target=gerar_naves, daemon=True)
@@ -186,8 +183,7 @@ def main():
                         threads_gerar_naves.append(t)
                     elif event.key == pygame.K_2:
                         dificuldade = "médio"
-                        config = dificuldades[dificuldade]
-                        foguetes_disponiveis = config["k"]
+                        foguetes_disponiveis = dificuldades[dificuldade]["k"]
                         estado_jogo = "jogando"
                         # Iniciar thread de gerar naves ao começar o jogo
                         t = threading.Thread(target=gerar_naves, daemon=True)
@@ -195,8 +191,7 @@ def main():
                         threads_gerar_naves.append(t)
                     elif event.key == pygame.K_3:
                         dificuldade = "difícil"
-                        config = dificuldades[dificuldade]
-                        foguetes_disponiveis = config["k"]
+                        foguetes_disponiveis = dificuldades[dificuldade]["k"]
                         estado_jogo = "jogando"
                         # Iniciar thread de gerar naves ao começar o jogo
                         t = threading.Thread(target=gerar_naves, daemon=True)
@@ -246,7 +241,7 @@ def main():
 
 def verificar_estado_jogo():
     global naves_abatidas, naves_atingiram_solo, naves, foguetes, estado_jogo, threads_gerar_naves, threads_recarregar
-    total_naves = config["quantidade_naves"]
+    total_naves = dificuldades[dificuldade]["quantidade_naves"]
     if estado_jogo == "jogando":
         if naves_abatidas >= total_naves / 2:
             estado_jogo = "vitoria"
@@ -265,8 +260,6 @@ def verificar_estado_jogo():
                 t.join()
             for t in threads_recarregar:
                 t.join()
-
-
 
 if __name__ == "__main__":
     main()
