@@ -256,10 +256,7 @@ def verificar_estado_jogo():
                 for foguete in foguetes:
                     foguete.ativo = False
                 foguetes.clear()
-            for t in threads_gerar_naves:
-                t.join()
-            for t in threads_recarregar:
-                t.join()
+
 
 if __name__ == "__main__":
     main()
