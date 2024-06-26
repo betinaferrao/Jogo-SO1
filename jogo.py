@@ -4,308 +4,250 @@ import random
 import time
 import os
 
-# Constantes do jogo
-LARGURA_TELA = 800
-ALTURA_TELA = 600
-CORES = {
-    'PRETO': (0, 0, 0),
-    'BRANCO': (255, 255, 255),
-    'VERMELHO': (255, 0, 0),
-    'VERDE': (0, 255, 0)
+pygame.init()
+screen = pygame.display.set_mode((800, 600))
+pygame.display.set_caption("Jogo Antiaéreo")
+clock = pygame.time.Clock()
+font = pygame.font.SysFont(None, 36)
+
+IMG_DIR = "imagens"
+
+dificuldades = {
+    "fácil": {"k": 20, "velocidade_nave": 1, "quantidade_naves": 20, "intervalo_naves": (1, 3)},
+    "médio": {"k": 15, "velocidade_nave": 2, "quantidade_naves": 30, "intervalo_naves": (0.5, 2)},
+    "difícil": {"k": 10, "velocidade_nave": 3, "quantidade_naves": 50, "intervalo_naves": (0.1, 1)}
 }
 
-# Mutexes
+naves = []
+foguetes = []
+threads_naves = []
+threads_foguetes = []
+threads_gerar_naves = []
+threads_recarregar = []
 mutex_naves = threading.Lock()
 mutex_foguetes = threading.Lock()
-mutex_estado_jogo = threading.Lock()
-
-# Estado do jogo
+mutex_recarga = threading.Lock()
+foguetes_disponiveis = 0
+recarregando = False
+jogador_pos = 90  
 naves_abatidas = 0
 naves_atingiram_solo = 0
-jogo_ativo = True
-vitoria = False
-derrota = False
-# dificuldade = 'medio'  # Pode ser 'facil', 'medio' ou 'dificil'
+estado_jogo = "menu"  # Pode ser "menu", "jogando", "vitoria" ou "derrota"
+running = True
 
-IMG_DIR = 'imagens'
-
-# Parâmetros de dificuldade
-dificuldades = {
-    'facil': {'foguetes': 30, 'naves': 20, 'velocidade_naves': 1},
-    'medio': {'foguetes': 20, 'naves': 30, 'velocidade_naves': 2},
-    'dificil': {'foguetes': 10, 'naves': 40, 'velocidade_naves': 3}
-}
-
-# Carregar imagens
 def carregar_imagem(nome_arquivo):
     return pygame.image.load(os.path.join(IMG_DIR, nome_arquivo)).convert_alpha()
 
-def selecionar_dificuldade():
-    global dificuldade
-    
-    pygame.init()
-    tela = pygame.display.set_mode((LARGURA_TELA, ALTURA_TELA))
-    pygame.display.set_caption("Escolha a Dificuldade")
-    
-    fonte_titulo = pygame.font.Font(None, 48)
-    fonte_opcao = pygame.font.Font(None, 36)
-    
-    texto_titulo = fonte_titulo.render('Escolha a Dificuldade:', True, CORES['BRANCO'])
-    texto_facil = fonte_opcao.render('Fácil (pressione F)', True, CORES['BRANCO'])
-    texto_medio = fonte_opcao.render('Médio (pressione M)', True, CORES['BRANCO'])
-    texto_dificil = fonte_opcao.render('Difícil (pressione D)', True, CORES['BRANCO'])
+img_nave = carregar_imagem("nave.png")
+img_foguete = carregar_imagem("foguete.png")
+img_lancador = carregar_imagem("canhao.png")
 
-    itens_menu = [texto_facil, texto_medio, texto_dificil]
-    
-    rodando = True
-    
-    while rodando:
-        for evento in pygame.event.get():
-            if evento.type == pygame.QUIT:
-                pygame.quit()
-                return
-            elif evento.type == pygame.KEYDOWN:
-                if evento.key == pygame.K_f:
-                    dificuldade = 'facil'
-                    rodando = False
-                elif evento.key == pygame.K_m:
-                    dificuldade = 'medio'
-                    rodando = False
-                elif evento.key == pygame.K_d:
-                    dificuldade = 'dificil'
-                    rodando = False
-                elif evento.key == pygame.K_ESCAPE:
-                    pygame.quit()
-                    return
-        
-        tela.fill(CORES['PRETO'])
-        tela.blit(texto_titulo, ((LARGURA_TELA - texto_titulo.get_width()) // 2, 150))
-        
-        for i, texto in enumerate(itens_menu):
-            pos_y = 250 + i * 50
-            tela.blit(texto, ((LARGURA_TELA - texto.get_width()) // 2, pos_y))
-        
-        pygame.display.flip()
-    pygame.quit()
-
+nave_largura, nave_altura = img_nave.get_size()
+foguete_largura, foguete_altura = img_foguete.get_size()
+lancador_largura, lancador_altura = img_lancador.get_size()
 
 # Classe Nave
-class Nave(pygame.sprite.Sprite):
+class Nave(threading.Thread):
     def __init__(self):
-        super().__init__()
-        self.image = carregar_imagem('nave.png')  # Substituir pelo nome da sua imagem de nave
-        self.rect = self.image.get_rect()
-        self.rect.x = random.randint(0, LARGURA_TELA - self.rect.width)
-        self.rect.y = 0
-        self.speed = dificuldades[dificuldade]['velocidade_naves']
+        threading.Thread.__init__(self)
+        self.x = random.randint(0, 800 - nave_largura)
+        self.y = 0
+        self.velocidade = dificuldades[dificuldade]["velocidade_nave"]
+        self.ativa = True
 
-    def update(self):
-        self.rect.y += self.speed
-        if self.rect.y > ALTURA_TELA:
+    def run(self):
+        global naves_atingiram_solo, running
+        while self.y < 600 and self.ativa and running:
             with mutex_naves:
-                global naves_atingiram_solo
+                self.y += self.velocidade
+            time.sleep(0.01)
+        if self.ativa:
+            with mutex_naves:
                 naves_atingiram_solo += 1
-            self.kill()
 
 # Classe Foguete
-class Foguete(pygame.sprite.Sprite):
-    def __init__(self, x, y, direction):
-        super().__init__()
-        self.image = carregar_imagem('foguete.png')  # Substituir pelo nome da sua imagem de foguete
-        self.rect = self.image.get_rect()
-        self.rect.center = (x, y)
-        self.speed = 10
-        self.direction = direction
+class Foguete(threading.Thread):
+    def __init__(self, angulo):
+        threading.Thread.__init__(self)
+        self.x = 400
+        self.y = 570
+        self.angulo = angulo
+        self.ativo = True
 
-    def update(self):
-        if self.direction == 'up':
-            self.rect.y -= self.speed
-        elif self.direction == 'left':
-            self.rect.x -= self.speed
-        elif self.direction == 'right':
-            self.rect.x += self.speed
-        elif self.direction == 'upleft':
-            self.rect.x -= self.speed // 2
-            self.rect.y -= self.speed // 2
-        elif self.direction == 'upright':
-            self.rect.x += self.speed // 2
-            self.rect.y -= self.speed // 2
+    def run(self):
+        global naves_abatidas, running
+        while self.y > 0 and self.ativo and running:
+            with mutex_foguetes:
+                if self.angulo == 90:
+                    self.y -= 5
+                elif self.angulo == 45:
+                    self.y -= 5
+                    self.x -= 5
+                elif self.angulo == -45:
+                    self.y -= 5
+                    self.x += 5
+                elif self.angulo == 180:
+                    self.x -= 5
+                elif self.angulo == -180:
+                    self.x += 5
+            self.verificar_colisao()
+            time.sleep(0.01)
 
-        if self.rect.y < 0 or self.rect.x < 0 or self.rect.x > LARGURA_TELA:
-            self.kill()
-
-# Classe Bateria
-class Bateria(pygame.sprite.Sprite):
-    def __init__(self):
-        super().__init__()
-        self.image = carregar_imagem('canhao.png')  # Substituir pelo nome da sua imagem de canhão
-        self.rect = self.image.get_rect()
-        self.rect.centerx = LARGURA_TELA // 2
-        self.rect.bottom = ALTURA_TELA
-        self.position = 'up'
-        self.foguetes = dificuldades[dificuldade]['foguetes']
-        self.lock = threading.Lock()
-
-    def recarregar_foguetes(self):
-        with self.lock:
-            time.sleep(3)  
-            self.foguetes = dificuldades[dificuldade]['foguetes']
-
-# Thread Principal do Jogo
-def thread_principal_jogo():
-    global jogo_ativo, naves_abatidas, naves_atingiram_solo, dificuldade, vitoria, derrota
-    while jogo_ativo:
-        if naves_abatidas >= dificuldades[dificuldade]['naves'] * 0.5:
-            vitoria = True
-            jogo_ativo = False
-        elif naves_atingiram_solo >= dificuldades[dificuldade]['naves'] * 0.5:
-            derrota = True
-            jogo_ativo = False
-        time.sleep(1)
-
-# Thread de Movimentação das Naves
-def thread_movimentacao_naves(naves, todas_as_sprites):
-    global jogo_ativo
-    while jogo_ativo:
+    def verificar_colisao(self):
+        global naves, naves_abatidas
         with mutex_naves:
-            if len(naves) < 10:
-                nave = Nave()
-                naves.add(nave)
-                todas_as_sprites.add(nave)
-        time.sleep(1)
+            for nave in naves:
+                if nave.x < self.x < nave.x + nave_largura and nave.y < self.y < nave.y + nave_altura:
+                    nave.ativa = False
+                    naves.remove(nave)
+                    naves_abatidas += 1
+                    break
 
-# Thread de Controle de Foguetes
-def thread_controle_foguetes(foguetes, naves):
-    global jogo_ativo
-    while jogo_ativo:
+# Função de recarregar
+def recarregar():
+    global foguetes_disponiveis, recarregando
+    with mutex_recarga:
+        foguetes_disponiveis = dificuldades[dificuldade]["k"]
+        recarregando = False
+
+# Função para desenhar objetos na tela
+def desenhar_tela():
+    screen.fill((0, 0, 0))
+    if estado_jogo == "menu":
+        desenhar_menu()
+    else:
+        with mutex_naves:
+            for nave in naves:
+                screen.blit(img_nave, (nave.x, nave.y))
         with mutex_foguetes:
-            for foguete in foguetes.copy():
-                foguete.update()
-                colisao = pygame.sprite.spritecollide(foguete, naves, True)
-                if colisao:
-                    with mutex_estado_jogo:
-                        global naves_abatidas
-                        naves_abatidas += 1
-                    foguetes.remove(foguete)
-                if foguete.rect.y < 0 or foguete.rect.x < 0 or foguete.rect.x > LARGURA_TELA:
-                    foguetes.remove(foguete)
-        time.sleep(0.05)
-
-# Função para exibir mensagens de vitória ou derrota
-def exibir_mensagem(texto):
-    pygame.init()
-    tela = pygame.display.set_mode((LARGURA_TELA, ALTURA_TELA))
-    tela.fill(CORES['PRETO'])
-    fonte = pygame.font.Font(None, 48)
-    texto_surface = fonte.render(texto, True, CORES['BRANCO'])
-    texto_rect = texto_surface.get_rect()
-    texto_rect.center = (LARGURA_TELA // 2, ALTURA_TELA // 2)
-    tela.blit(texto_surface, texto_rect)
+            for foguete in foguetes:
+                screen.blit(img_foguete, (foguete.x, foguete.y))
+        screen.blit(img_lancador, (400 - lancador_largura // 2, 600 - lancador_altura))  
+        texto_foguetes = font.render(f"Foguetes: {foguetes_disponiveis}", True, (255, 255, 255))
+        screen.blit(texto_foguetes, (10, 10))
+        texto_abatidas = font.render(f"Naves Abatidas: {naves_abatidas}", True, (255, 255, 255))
+        screen.blit(texto_abatidas, (10, 40))
+        texto_atingiram_solo = font.render(f"Naves no Solo: {naves_atingiram_solo}", True, (255, 255, 255))
+        screen.blit(texto_atingiram_solo, (10, 70))
+        if estado_jogo in ["vitoria", "derrota"]:
+            texto_resultado = font.render(f"{estado_jogo.capitalize()}!", True, (255, 255, 255))
+            text_rect = texto_resultado.get_rect(center=(400, 300))
+            screen.blit(texto_resultado, text_rect)
     pygame.display.flip()
 
-    rodando = True
-    while rodando:
-        for evento in pygame.event.get():
-            if evento.type == pygame.QUIT:
-                rodando = False
+# Função para desenhar o menu
+def desenhar_menu():
+    titulo = font.render("Jogo Antiaéreo", True, (255, 255, 255))
+    screen.blit(titulo, (300, 100))
+    facil = font.render("1. Fácil", True, (255, 255, 255))
+    screen.blit(facil, (350, 200))
+    medio = font.render("2. Médio", True, (255, 255, 255))
+    screen.blit(medio, (350, 250))
+    dificil = font.render("3. Difícil", True, (255, 255, 255))
+    screen.blit(dificil, (350, 300))
 
-    pygame.quit()
+# Função para gerar naves
+def gerar_naves():
+    global running
+    while estado_jogo == "jogando" and running:
+        if len(naves) < dificuldades[dificuldade]["quantidade_naves"]:
+            nave = Nave()
+            nave.start()
+            with mutex_naves:
+                naves.append(nave)
+            threads_naves.append(nave)  
+        time.sleep(random.uniform(*dificuldades[dificuldade]["intervalo_naves"]))  
 
 # Função principal do jogo
-def jogo():
-    global jogo_ativo, vitoria, derrota
+def main():
+    global recarregando, foguetes_disponiveis, jogador_pos, naves_abatidas, naves_atingiram_solo, estado_jogo, dificuldade, running, threads_gerar_naves, threads_recarregar
 
-    selecionar_dificuldade()
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if estado_jogo == "menu":
+                    if event.key == pygame.K_1:
+                        dificuldade = "fácil"
+                        foguetes_disponiveis = dificuldades[dificuldade]["k"]
+                        estado_jogo = "jogando"
+                        t = threading.Thread(target=gerar_naves, daemon=True)
+                        t.start()
+                        threads_gerar_naves.append(t)
+                    elif event.key == pygame.K_2:
+                        dificuldade = "médio"
+                        foguetes_disponiveis = dificuldades[dificuldade]["k"]
+                        estado_jogo = "jogando"
+                        t = threading.Thread(target=gerar_naves, daemon=True)
+                        t.start()
+                        threads_gerar_naves.append(t)
+                    elif event.key == pygame.K_3:
+                        dificuldade = "difícil"
+                        foguetes_disponiveis = dificuldades[dificuldade]["k"]
+                        estado_jogo = "jogando"
+                        t = threading.Thread(target=gerar_naves, daemon=True)
+                        t.start()
+                        threads_gerar_naves.append(t)
+                elif estado_jogo == "jogando":
+                    if event.key == pygame.K_SPACE and foguetes_disponiveis > 0:
+                        foguete = Foguete(jogador_pos)
+                        foguete.start()
+                        with mutex_foguetes:
+                            foguetes.append(foguete)
+                        threads_foguetes.append(foguete)
+                        with mutex_recarga:
+                            foguetes_disponiveis -= 1
+                    elif event.key == pygame.K_r and not recarregando:
+                        recarregando = True
+                        t = threading.Thread(target=recarregar, daemon=True)
+                        t.start()
+                        threads_recarregar.append(t)
+                    elif event.key == pygame.K_a:
+                        jogador_pos = 180  
+                    elif event.key == pygame.K_q:
+                        jogador_pos = 45  
+                    elif event.key == pygame.K_w:
+                        jogador_pos = 90  
+                    elif event.key == pygame.K_e:
+                        jogador_pos = -45  
+                    elif event.key == pygame.K_d:
+                        jogador_pos = -180 
 
-    pygame.init()
-    tela = pygame.display.set_mode((LARGURA_TELA, ALTURA_TELA))
-    pygame.display.set_caption("Jogo de Defesa Antiaérea")
+        desenhar_tela()
+        if estado_jogo == "jogando":
+            verificar_estado_jogo()
+        clock.tick(30)
 
-    todas_as_sprites = pygame.sprite.Group()
-    naves = pygame.sprite.Group()
-    foguetes = pygame.sprite.Group()
-
-    bateria = Bateria()
-    todas_as_sprites.add(bateria)
-
-    thread_principal = threading.Thread(target=thread_principal_jogo)
-    thread_movimentacao = threading.Thread(target=thread_movimentacao_naves, args=(naves, todas_as_sprites))
-    thread_controle = threading.Thread(target=thread_controle_foguetes, args=(foguetes, naves))
-
-    thread_principal.start()
-    thread_movimentacao.start()
-    thread_controle.start()
-
-    relogio = pygame.time.Clock()
-    rodando = True
-
-    while rodando:
-        for evento in pygame.event.get():
-            if evento.type == pygame.QUIT:
-                rodando = False
-            elif evento.type == pygame.KEYDOWN:
-                if evento.key == pygame.K_a:
-                    bateria.position = 'left'
-                elif evento.key == pygame.K_d:
-                    bateria.position = 'right'
-                elif evento.key == pygame.K_w:
-                    bateria.position = 'up'
-                elif evento.key == pygame.K_s:
-                    bateria.position = 'down'
-                elif evento.key == pygame.K_q:
-                    bateria.position = 'upleft'
-                elif evento.key == pygame.K_e:
-                    bateria.position = 'upright'
-                elif evento.key == pygame.K_SPACE:
-                    with mutex_foguetes:
-                        if bateria.foguetes > 0:
-                            if bateria.position == 'up':
-                                foguete = Foguete(bateria.rect.centerx, bateria.rect.top, 'up')
-                            elif bateria.position == 'left':
-                                foguete = Foguete(bateria.rect.left, bateria.rect.centery, 'left')
-                            elif bateria.position == 'right':
-                                foguete = Foguete(bateria.rect.right, bateria.rect.centery, 'right')
-                            elif bateria.position == 'upleft':
-                                foguete = Foguete(bateria.rect.left, bateria.rect.top, 'upleft')
-                            elif bateria.position == 'upright':
-                                foguete = Foguete(bateria.rect.right, bateria.rect.top, 'upright')
-                            foguetes.add(foguete)
-                            todas_as_sprites.add(foguete)
-                            bateria.foguetes -= 1
-                elif evento.key == pygame.K_r:
-                    threading.Thread(target=bateria.recarregar_foguetes).start()
-
-        todas_as_sprites.update()
-
-        tela.fill(CORES['PRETO'])
-        todas_as_sprites.draw(tela)
-
-        fonte = pygame.font.Font(None, 36)
-        text_foguetes = fonte.render(f"Foguetes: {bateria.foguetes}", True, CORES['BRANCO'])
-        tela.blit(text_foguetes, (10, 10))
-
-        text_naves_abatidas = fonte.render(f"Naves abatidas: {naves_abatidas}", True, CORES['BRANCO'])
-        tela.blit(text_naves_abatidas, (10, 50))
-        text_naves_atingiram = fonte.render(f"Naves que atingiram o solo: {naves_atingiram_solo}", True, CORES['BRANCO'])
-        tela.blit(text_naves_atingiram, (10, 90))
-
-        pygame.display.flip()
-        relogio.tick(60)
-
-        if vitoria:
-            exibir_mensagem("Vitória!")
-            break
-        elif derrota:
-            exibir_mensagem("Derrota!")
-            break
-
-    jogo_ativo = False
-
-    thread_principal.join()
-    thread_movimentacao.join()
-    thread_controle.join()
+    for t in threads_naves:
+        t.join()
+    for t in threads_foguetes:
+        t.join()
+    for t in threads_gerar_naves:
+        t.join()
+    for t in threads_recarregar:
+        t.join()
 
     pygame.quit()
 
+def verificar_estado_jogo():
+    global naves_abatidas, naves_atingiram_solo, naves, foguetes, estado_jogo, threads_gerar_naves, threads_recarregar
+    total_naves = dificuldades[dificuldade]["quantidade_naves"]
+    if estado_jogo == "jogando":
+        if naves_abatidas >= total_naves / 2:
+            estado_jogo = "vitoria"
+        elif naves_atingiram_solo > total_naves / 2:
+            estado_jogo = "derrota"
+        if estado_jogo in ["vitoria", "derrota"]:
+            with mutex_naves:
+                for nave in naves:
+                    nave.ativa = False
+                naves.clear()
+            with mutex_foguetes:
+                for foguete in foguetes:
+                    foguete.ativo = False
+                foguetes.clear()
+
+
 if __name__ == "__main__":
-    jogo()
+    main()
